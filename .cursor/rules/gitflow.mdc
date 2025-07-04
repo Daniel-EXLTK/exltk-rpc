@@ -1,0 +1,11 @@
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "cursor.addRule",
+  "params": {
+    "description": "Impone la metodología GitFlow en la gestión de ramas, commits y PR.",
+    "globs": ["**/*"],
+    "alwaysApply": true,
+    "body": "# Regla: GitFlow\n\nUsar SIEMPRE cuando:\n- Se creen, renombren o fusionen ramas.\n- Se generen mensajes de commit o descripciones de PR.\n- Se planifiquen lanzamientos, hotfixes o integraciones.\n\n## 1. Estructura de ramas\n\nRama            | Propósito                     | Convención de nombre            | ¿Quién la crea?\n--------------- | ----------------------------- | -------------------------------- | ---------------\nmain            | Producción estable            | main                             | Automático\ndevelop         | Integración continua          | develop                          | Automático\nfeature/*       | Nuevas funcionalidades        | feature/<tipo>/<ticket-desc>     | Desarrollador\nhotfix/*        | Parche crítico en prod        | hotfix/<ticket-desc>             | Desarrollador\nrelease/*       | Preparar despliegue           | release/<versión>                | Desarrollador líder\n\n## 2. Convención de commits\n\n<tipo>: <breve resumen>\n\n[Opcional] Cuerpo descriptivo en presente\nRefs: #<issue>, closes #<ticket>\n\nTipos válidos: feat, fix, docs, chore, refactor, test, perf, style.\nMáximo 72 caracteres en la primera línea.\nIncluye referencia al ticket o issue.\n\n## 3. Política de merges\n\n1. feature/* → merge-request a develop (rebase interactivo recomendado).\n2. hotfix/* → merge-request a main y luego back-merge a develop.\n3. release/* → merge-request a main (genera tag) y back-merge a develop.\n4. Solo Squash & Merge o Merge Commit según la política del repo; nunca Rebase & Merge directo a ramas largas.\n\n## 4. Etiquetado (tags)\n\n- Formato SemVer v<MAJOR>.<MINOR>.<PATCH> (ej.: v2.1.0).\n- Tag creado al cerrar release/* o hotfix/*.\n- El changelog debe actualizarse antes de etiquetar.\n\n## 5. Plantillas recomendadas (contexto extra)\n\n@.github/PULL_REQUEST_TEMPLATE.md\n@docs/CHANGELOG.md\n"
+  }
+}
