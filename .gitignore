@@ -58,3 +58,8 @@ temp/
 *.pem
 secrets.yaml
 config.prod.yaml 
+# Compiled service binaries
+r0d0-service
+orchestrator-server
+proposal-service
+gateway
