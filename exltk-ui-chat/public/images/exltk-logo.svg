@@ -1,0 +1,5 @@
+<svg width="200" height="60" viewBox="0 0 200 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="200" height="60" rx="12" fill="#fff"/>
+  <text x="30" y="38" font-size="32" font-family="Arial, Helvetica, sans-serif" fill="#1abc9c">eXLTK</text>
+  <line x1="20" y1="50" x2="180" y2="10" stroke="#1abc9c" stroke-width="6"/>
+</svg> 

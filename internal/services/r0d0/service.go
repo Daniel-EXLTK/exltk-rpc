@@ -43,7 +43,7 @@ func NewR0D0Service() *R0D0Service {
 }
 
 // Describe returns the service capabilities and metadata for introspection.
-func (s *R0D0Service) Describe(args interface{}, reply *Service) error {
+func (s *R0D0Service) Describe(args *struct{}, reply *Service) error {
 	*reply = Service{
 		Name:        s.serviceName,
 		Description: "R0D0 Service for conversational project discovery and ProjectSlot generation",
