@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"net/http"
 	"strings"
 	"time"
@@ -158,7 +159,7 @@ func (e *Executor) executeStep(ctx context.Context, step *WorkflowStep, context 
 
 	// Prepare JSON-RPC request
 	var methodName = step.Method
-	if step.Service == "r0d0-service" && !strings.HasPrefix(step.Method, "R0D0Service.") {
+	if (step.Service == "r0d0-service" || step.Service == "r0d0") && !strings.HasPrefix(step.Method, "R0D0Service.") {
 		methodName = "R0D0Service." + step.Method
 	}
 	request := map[string]interface{}{
@@ -491,10 +492,38 @@ func (e *Executor) evaluateCondition(condition string, context map[string]interf
 
 // buildResponse builds the final orchestrator response
 func (e *Executor) buildResponse(plan *WorkflowPlan, startTime time.Time, success bool, errorMsg string) *OrchestratorResponse {
+	// Buscar respuesta conversacional generada por R0D0 en el resultado del último paso
+	var conversational string
+	if len(plan.Steps) > 0 {
+		lastStep := plan.Steps[len(plan.Steps)-1]
+		if lastStep.Result != nil {
+			if resultMap, ok := lastStep.Result.(map[string]interface{}); ok {
+				// Buscar en varios campos típicos (nivel superior) - incluir mayúsculas
+				for _, key := range []string{"Response", "Message", "Respuesta", "message", "response", "respuesta", "text", "output"} {
+					if val, ok := resultMap[key].(string); ok && val != "" {
+						conversational = val
+						break
+					}
+				}
+				// Si no se encontró, buscar en result anidado
+				if conversational == "" {
+					if nested, ok := resultMap["result"].(map[string]interface{}); ok {
+						for _, key := range []string{"Response", "Message", "Respuesta", "message", "response", "respuesta", "text", "output"} {
+							if val, ok := nested[key].(string); ok && val != "" {
+								conversational = val
+								break
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
 	response := &OrchestratorResponse{
 		RequestID:  plan.Context["request_id"].(string),
 		WorkflowID: plan.ID,
-		Response:   e.generateHumanReadableResponse(plan, success),
+		Response:   conversational,
 		Result:     e.extractFinalResult(plan),
 		Steps:      plan.Steps,
 		Context:    plan.Context,
@@ -504,14 +533,36 @@ func (e *Executor) buildResponse(plan *WorkflowPlan, startTime time.Time, succes
 		Timestamp:  time.Now(),
 	}
 
+	// Si no hay respuesta conversacional, usar el método actual
+	if response.Response == "" {
+		response.Response = e.generateHumanReadableResponse(plan, success)
+	}
+
 	return response
 }
 
 // generateHumanReadableResponse generates a human-readable response
 func (e *Executor) generateHumanReadableResponse(plan *WorkflowPlan, success bool) string {
 	if !success {
-		return "Lo siento, no pude completar tu solicitud. Hubo un error durante la ejecución del workflow."
+		return e.generateErrorResponse(plan)
 	}
+
+	// Try to generate conversational response
+	if conversationalResponse := e.generateConversationalResponse(plan); conversationalResponse != "" {
+		return conversationalResponse
+	}
+
+	// Fallback to improved static responses
+	return e.generateFallbackResponse(plan)
+}
+
+// generateConversationalResponse generates a natural, context-aware response
+func (e *Executor) generateConversationalResponse(plan *WorkflowPlan) string {
+	// Extract project context from the results
+	projectContext := e.extractProjectContext(plan)
+
+	// Get the final result to understand what was accomplished
+	finalResult := e.extractFinalResult(plan)
 
 	// Count completed steps
 	completedSteps := 0
@@ -521,11 +572,154 @@ func (e *Executor) generateHumanReadableResponse(plan *WorkflowPlan, success boo
 		}
 	}
 
-	if completedSteps == 0 {
-		return "El workflow se completó pero no se ejecutaron pasos."
+	// Generate response based on what was accomplished
+	if projectSlot := e.extractProjectSlot(finalResult); projectSlot != nil {
+		return e.generateProjectDiscoveryResponse(projectSlot)
 	}
 
-	return fmt.Sprintf("¡Perfecto! He completado tu solicitud ejecutando %d pasos del workflow. El resultado está listo.", completedSteps)
+	// If we have context about what was discovered
+	if projectContext != "" {
+		return e.generateContextualResponse(projectContext, completedSteps)
+	}
+
+	return ""
+}
+
+// extractProjectContext extracts meaningful project context from the workflow
+func (e *Executor) extractProjectContext(plan *WorkflowPlan) string {
+	// Look for project-related information in the context and results
+	var contextParts []string
+
+	// Check context for project info
+	if userMessage, exists := plan.Context["user_message"]; exists {
+		if msg, ok := userMessage.(string); ok && msg != "" {
+			contextParts = append(contextParts, fmt.Sprintf("solicitud: %s", msg))
+		}
+	}
+
+	// Check step results for discovery information
+	for _, step := range plan.Steps {
+		if step.Status == StepStatusCompleted && step.Result != nil {
+			if resultMap, ok := step.Result.(map[string]interface{}); ok {
+				// Look for project slot or discovery information
+				if projectSlot, exists := resultMap["project_slot"]; exists {
+					if ps, ok := projectSlot.(map[string]interface{}); ok {
+						if name, exists := ps["name"]; exists {
+							contextParts = append(contextParts, fmt.Sprintf("proyecto: %v", name))
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return strings.Join(contextParts, ", ")
+}
+
+// extractProjectSlot tries to extract a ProjectSlot from the final result
+func (e *Executor) extractProjectSlot(result interface{}) map[string]interface{} {
+	if result == nil {
+		return nil
+	}
+
+	if resultMap, ok := result.(map[string]interface{}); ok {
+		// Look for project_slot in the result
+		if projectSlot, exists := resultMap["project_slot"]; exists {
+			if ps, ok := projectSlot.(map[string]interface{}); ok {
+				return ps
+			}
+		}
+
+		// Check if the result itself looks like a project slot
+		if _, hasName := resultMap["name"]; hasName {
+			if _, hasObjective := resultMap["objective"]; hasObjective {
+				if _, hasTimeline := resultMap["timeline"]; hasTimeline {
+					return resultMap // This looks like a project slot
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// generateProjectDiscoveryResponse generates a response when a project was discovered
+func (e *Executor) generateProjectDiscoveryResponse(projectSlot map[string]interface{}) string {
+	responses := []string{
+		"¡Excelente! Ya tengo una imagen clara de tu %s. He recopilado toda la información necesaria para crear una propuesta personalizada que se ajuste perfectamente a tu visión.",
+		"¡Perfecto! Me encanta cómo ha quedado definido tu %s. Con todos los detalles que me has compartido, puedo crear una propuesta muy específica para tu proyecto.",
+		"¡Genial! Tu %s está muy bien estructurado. He capturado todos los aspectos importantes para desarrollar una propuesta completa y detallada.",
+	}
+
+	projectName := "proyecto"
+	if name, exists := projectSlot["name"]; exists {
+		if nameStr, ok := name.(string); ok && nameStr != "" {
+			projectName = strings.ToLower(nameStr)
+		}
+	}
+
+	// Select a random response
+	rand.Seed(time.Now().UnixNano())
+	selectedResponse := responses[rand.Intn(len(responses))]
+
+	return fmt.Sprintf(selectedResponse, projectName)
+}
+
+// generateContextualResponse generates a response based on available context
+func (e *Executor) generateContextualResponse(context string, completedSteps int) string {
+	responses := []string{
+		"¡Perfecto! He procesado tu solicitud y recopilado toda la información necesaria. %s",
+		"¡Excelente! He completado el análisis de tu proyecto. %s",
+		"¡Genial! He terminado de procesar todos los detalles. %s",
+	}
+
+	contextMsg := "Los resultados están listos para el siguiente paso."
+	if context != "" {
+		contextMsg = fmt.Sprintf("Con base en %s, tengo todo lo necesario para continuar.", context)
+	}
+
+	// Select a random response
+	rand.Seed(time.Now().UnixNano())
+	selectedResponse := responses[rand.Intn(len(responses))]
+
+	return fmt.Sprintf(selectedResponse, contextMsg)
+}
+
+// generateErrorResponse generates a natural error response
+func (e *Executor) generateErrorResponse(plan *WorkflowPlan) string {
+	errorResponses := []string{
+		"Lo siento, encontré un problema al procesar tu solicitud. ¿Podrías intentar de nuevo?",
+		"Disculpa, hubo un inconveniente técnico. Por favor, inténtalo nuevamente.",
+		"Lamento informarte que no pude completar la operación. Vamos a intentarlo otra vez.",
+	}
+
+	rand.Seed(time.Now().UnixNano())
+	return errorResponses[rand.Intn(len(errorResponses))]
+}
+
+// generateFallbackResponse generates improved static responses as fallback
+func (e *Executor) generateFallbackResponse(plan *WorkflowPlan) string {
+	// Count completed steps
+	completedSteps := 0
+	for _, step := range plan.Steps {
+		if step.Status == StepStatusCompleted {
+			completedSteps++
+		}
+	}
+
+	if completedSteps == 0 {
+		return "He procesado tu solicitud, aunque no fue necesario ejecutar pasos adicionales."
+	}
+
+	// More natural fallback responses
+	fallbackResponses := []string{
+		"¡Perfecto! He completado todo lo necesario para tu solicitud. Los resultados están listos.",
+		"¡Excelente! He terminado de procesar tu proyecto. Todo está listo para continuar.",
+		"¡Genial! He finalizado el análisis de tu solicitud. La información está completa.",
+	}
+
+	rand.Seed(time.Now().UnixNano())
+	return fallbackResponses[rand.Intn(len(fallbackResponses))]
 }
 
 // extractFinalResult extracts the final result from the workflow

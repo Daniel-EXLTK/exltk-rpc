@@ -5,10 +5,13 @@ package r0d0
 import (
 	"fmt"
 	"log"
+	"math/rand"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/Daniel-EXLTK/exltk-rpc/pkg/gemini"
 	"github.com/google/uuid"
 )
 
@@ -23,21 +26,38 @@ type R0D0Service struct {
 	// Service metadata
 	serviceName    string
 	serviceVersion string
+
+	// LLM client for natural responses
+	llmClient *gemini.Client
 }
 
-// NewR0D0Service creates a new instance of the R0D0 service.
+// NewR0D0Service creates a new R0D0 service instance.
 func NewR0D0Service() *R0D0Service {
 	service := &R0D0Service{
 		sessions:       make(map[string]*Session),
-		serviceName:    "r0d0-service",
+		sessionsMux:    sync.RWMutex{},
+		serviceName:    "r0d0",
 		serviceVersion: "1.0.0",
+		discoveryAreas: []DiscoveryArea{},
 	}
 
 	// Initialize discovery areas
 	service.initDiscoveryAreas()
 
-	// Start cleanup goroutine for expired sessions
+	// Start cleanup routine
 	go service.cleanupExpiredSessions()
+
+	// Initialize LLM client for natural responses
+	// API key should be set via environment variable
+	apiKey := os.Getenv("GOOGLE_API_KEY")
+	if apiKey == "" {
+		panic("GOOGLE_API_KEY environment variable is required")
+	}
+	service.llmClient = gemini.NewClient(
+		apiKey,
+		gemini.WithTimeout(10*time.Second),
+		gemini.WithMaxRetries(2),
+	)
 
 	return service
 }
@@ -99,6 +119,7 @@ func (s *R0D0Service) Describe(args *struct{}, reply *Service) error {
 
 // DiscoveryStart starts a new discovery session with the user.
 func (s *R0D0Service) DiscoveryStart(req *DiscoveryStartRequest, reply *DiscoveryStartResponse) error {
+	log.Printf("[DiscoveryStart] Request recibida: user_id=%s, message=%s", req.UserID, req.Message)
 	// Validate request
 	if req.UserID == "" {
 		return fmt.Errorf("user_id is required")
@@ -144,9 +165,12 @@ func (s *R0D0Service) DiscoveryStart(req *DiscoveryStartRequest, reply *Discover
 		ExpiresAt:      now.Add(DefaultSessionTimeout),
 	}
 
+	log.Printf("[DiscoveryStart] Nueva sesión creada: session_id=%s para user_id=%s", sessionID, req.UserID)
+
 	// Analyze initial message
 	insights := s.analyzeMessage(req.Message)
 	session.Insights = insights
+	log.Printf("[DiscoveryStart] Insights iniciales: %+v", insights)
 
 	// Update discovered info and missing areas
 	s.updateDiscoveredInfo(session, req.Message)
@@ -157,8 +181,11 @@ func (s *R0D0Service) DiscoveryStart(req *DiscoveryStartRequest, reply *Discover
 	session.Confidence = s.calculateConfidence(session)
 
 	// Generate response
+	log.Printf("[DiscoveryStart] Generando respuesta conversacional...")
 	response := s.generateResponse(session)
 	nextPrompt := s.generateNextPrompt(session)
+	log.Printf("[DiscoveryStart] Respuesta generada: %s", response)
+	log.Printf("[DiscoveryStart] Siguiente prompt sugerido: %s", nextPrompt)
 
 	// Add assistant response to conversation
 	session.Conversation = append(session.Conversation, Message{
@@ -190,6 +217,7 @@ func (s *R0D0Service) DiscoveryStart(req *DiscoveryStartRequest, reply *Discover
 
 // DiscoveryContinue continues an existing discovery session.
 func (s *R0D0Service) DiscoveryContinue(req *DiscoveryContinueRequest, reply *DiscoveryContinueResponse) error {
+	log.Printf("[DiscoveryContinue] Request recibida: session_id=%s, message=%s", req.SessionID, req.Message)
 	// Validate request
 	if req.SessionID == "" {
 		return fmt.Errorf("session_id is required")
@@ -203,6 +231,7 @@ func (s *R0D0Service) DiscoveryContinue(req *DiscoveryContinueRequest, reply *Di
 	session, exists := s.sessions[req.SessionID]
 	if !exists {
 		s.sessionsMux.Unlock()
+		log.Printf("[DiscoveryContinue] Sesión no encontrada: session_id=%s", req.SessionID)
 		return fmt.Errorf("session not found")
 	}
 
@@ -235,10 +264,12 @@ func (s *R0D0Service) DiscoveryContinue(req *DiscoveryContinueRequest, reply *Di
 		Metadata:  map[string]interface{}{"intent": "discovery_continue"},
 	}
 	session.Conversation = append(session.Conversation, userMessage)
+	log.Printf("[DiscoveryContinue] Mensaje de usuario agregado a la conversación: %s", req.Message)
 
 	// Analyze new message
 	newInsights := s.analyzeMessage(req.Message)
 	session.Insights = s.mergeInsights(session.Insights, newInsights)
+	log.Printf("[DiscoveryContinue] Insights nuevos: %+v", newInsights)
 
 	// Update discovered info
 	s.updateDiscoveredInfo(session, req.Message)
@@ -249,8 +280,11 @@ func (s *R0D0Service) DiscoveryContinue(req *DiscoveryContinueRequest, reply *Di
 	session.Confidence = s.calculateConfidence(session)
 
 	// Generate response
+	log.Printf("[DiscoveryContinue] Generando respuesta conversacional...")
 	response := s.generateResponse(session)
 	nextPrompt := s.generateNextPrompt(session)
+	log.Printf("[DiscoveryContinue] Respuesta generada: %s", response)
+	log.Printf("[DiscoveryContinue] Siguiente prompt sugerido: %s", nextPrompt)
 
 	// Add assistant response to conversation
 	assistantMessage := Message{
@@ -586,17 +620,175 @@ func (s *R0D0Service) calculateConfidence(session *Session) int {
 
 // generateResponse generates a conversational response based on the session state.
 func (s *R0D0Service) generateResponse(session *Session) string {
+	// Try to generate natural response with LLM
+	if naturalResponse := s.generateNaturalResponse(session); naturalResponse != "" {
+		return naturalResponse
+	}
+
+	// Fallback to improved static responses
+	return s.generateFallbackResponse(session)
+}
+
+// generateNaturalResponse generates a natural response using LLM
+func (s *R0D0Service) generateNaturalResponse(session *Session) string {
+	if s.llmClient == nil {
+		log.Printf("[LLM] LLM client no inicializado")
+		return ""
+	}
+	// Get the latest user message
+	var lastUserMessage string
+	for i := len(session.Conversation) - 1; i >= 0; i-- {
+		if session.Conversation[i].Role == "user" {
+			lastUserMessage = session.Conversation[i].Content
+			break
+		}
+	}
+	prompt := s.buildResponsePrompt(session, lastUserMessage)
+	log.Printf("[LLM] Prompt enviado a Gemini:\n%s", prompt)
+	response, err := s.llmClient.Generate(prompt)
+	log.Printf("[LLM] Respuesta cruda de Gemini: %s", response)
+	if err != nil {
+		log.Printf("[LLM] Error generando respuesta natural: %v", err)
+		return ""
+	}
+	return s.processLLMResponse(response)
+}
+
+// buildResponsePrompt creates the prompt for natural response generation
+func (s *R0D0Service) buildResponsePrompt(session *Session, userMessage string) string {
+	discoveredAreas := s.getDiscoveredAreas(session)
+	conversationHistory := s.formatConversationHistory(session.Conversation)
+
+	return fmt.Sprintf(`Eres R0D0, un asistente conversacional especializado en discovery de proyectos.
+Debes responder de manera natural, entusiasta y profesional.
+
+CONTEXTO DE LA CONVERSACIÓN:
+- Progreso del discovery: %d%%
+- Confianza actual: %d%%
+- Áreas descubiertas: %s
+- Áreas faltantes: %s
+
+ÚLTIMO MENSAJE DEL USUARIO:
+%s
+
+HISTORIAL DE CONVERSACIÓN:
+%s
+
+INSTRUCCIONES:
+1. Responde de manera natural y conversacional
+2. Mantén un tono entusiasta pero profesional
+3. Haz preguntas inteligentes basadas en el contexto
+4. Varía tu lenguaje - no uses siempre las mismas frases
+5. Reconoce lo que el usuario ya ha compartido
+6. Guía la conversación hacia áreas faltantes naturalmente
+7. Mantén las respuestas entre 1-2 oraciones
+8. Evita ser repetitivo
+
+Responde SOLO con el mensaje conversacional, sin formato JSON ni comillas.`,
+		session.Progress, session.Confidence,
+		strings.Join(discoveredAreas, ", "),
+		strings.Join(session.MissingAreas, ", "),
+		userMessage,
+		conversationHistory)
+}
+
+// processLLMResponse processes the LLM response to ensure it's clean
+func (s *R0D0Service) processLLMResponse(response string) string {
+	// Clean up the response
+	response = strings.TrimSpace(response)
+
+	// Remove any JSON formatting if present
+	if strings.HasPrefix(response, `"`) && strings.HasSuffix(response, `"`) {
+		response = strings.Trim(response, `"`)
+	}
+
+	// Limit response length
+	if len(response) > 300 {
+		response = response[:300] + "..."
+	}
+
+	return response
+}
+
+// generateFallbackResponse generates improved static responses as fallback
+func (s *R0D0Service) generateFallbackResponse(session *Session) string {
+	// Responses with more variety and context
+	var enthusiasticResponses = []string{
+		"¡Qué interesante! %s",
+		"¡Me encanta la idea! %s",
+		"¡Suena genial! %s",
+		"¡Perfecto! %s",
+		"¡Excelente! %s",
+	}
+
+	var progressResponses = []string{
+		"Perfecto, ya voy entendiendo mejor tu proyecto. %s",
+		"Genial, me está quedando más claro. %s",
+		"Muy bien, voy captando la idea. %s",
+		"Entiendo, me parece muy interesante. %s",
+	}
+
 	if len(session.Conversation) == 1 {
-		// First response
-		return "¡Excelente! Me encanta ayudarte a desarrollar tu proyecto. Por lo que me cuentas, suena muy interesante. Déjame entender mejor los detalles para poder ayudarte de la mejor manera."
+		// First response - more varied
+		firstResponses := []string{
+			"¡Qué interesante! Me encanta ayudarte a desarrollar tu proyecto. Cuéntame más detalles sobre lo que tienes en mente.",
+			"¡Excelente! Suena como un proyecto muy emocionante. Déjame entender mejor los detalles para poder ayudarte al máximo.",
+			"¡Genial! Me parece muy interesante lo que me cuentas. Vamos a explorar tu idea juntos.",
+		}
+		return s.getRandomResponse(firstResponses)
 	}
 
-	// Generate response based on missing areas
-	if len(session.MissingAreas) > 0 {
-		return fmt.Sprintf("Perfecto, voy entendiendo mejor tu proyecto. Tengo una idea del %d%% de lo que necesitas. Me gustaría profundizar en algunos aspectos más.", session.Progress)
+	// Generate response based on progress
+	if session.Progress < 30 {
+		return s.getRandomResponse(enthusiasticResponses, "Déjame saber más detalles para entender mejor tu visión.")
+	} else if session.Progress < 70 {
+		return s.getRandomResponse(progressResponses, fmt.Sprintf("Ya tengo una idea del %d%% de lo que necesitas. Sigamos explorando algunos aspectos más.", session.Progress))
+	} else {
+		return "¡Genial! Ya tengo una muy buena comprensión de tu proyecto. Está tomando forma muy bien."
+	}
+}
+
+// getRandomResponse selects a random response from a list
+func (s *R0D0Service) getRandomResponse(responses []string, extraContent ...string) string {
+	rand.Seed(time.Now().UnixNano())
+	idx := rand.Intn(len(responses))
+	response := responses[idx]
+
+	if len(extraContent) > 0 {
+		return fmt.Sprintf(response, extraContent[0])
 	}
 
-	return "¡Genial! Creo que ya tengo una buena comprensión de tu proyecto. Está tomando forma muy bien."
+	return response
+}
+
+// getDiscoveredAreas returns the list of discovered areas
+func (s *R0D0Service) getDiscoveredAreas(session *Session) []string {
+	var discovered []string
+	for _, area := range s.discoveryAreas {
+		if _, exists := session.DiscoveredInfo[area.Key]; exists {
+			discovered = append(discovered, area.Name)
+		}
+	}
+	return discovered
+}
+
+// formatConversationHistory formats the conversation history for the prompt
+func (s *R0D0Service) formatConversationHistory(conversation []Message) string {
+	var history strings.Builder
+
+	// Only include the last 4 messages to avoid overwhelming the prompt
+	start := len(conversation) - 4
+	if start < 0 {
+		start = 0
+	}
+
+	for i := start; i < len(conversation); i++ {
+		msg := conversation[i]
+		history.WriteString(fmt.Sprintf("%s: %s\n",
+			strings.ToUpper(msg.Role), msg.Content))
+	}
+
+	return history.String()
 }
 
 // generateNextPrompt generates the next prompt based on missing areas.
@@ -605,12 +797,27 @@ func (s *R0D0Service) generateNextPrompt(session *Session) string {
 	for _, area := range s.discoveryAreas {
 		for _, missingKey := range session.MissingAreas {
 			if area.Key == missingKey && len(area.Prompts) > 0 {
-				return area.Prompts[0]
+				// Add variety to prompts
+				prompts := area.Prompts
+				if len(prompts) > 1 {
+					rand.Seed(time.Now().UnixNano())
+					return prompts[rand.Intn(len(prompts))]
+				}
+				return prompts[0]
 			}
 		}
 	}
 
-	return "¿Hay algo más que te gustaría agregar sobre tu proyecto?"
+	// Varied fallback prompts
+	fallbackPrompts := []string{
+		"¿Hay algo más que te gustaría agregar sobre tu proyecto?",
+		"¿Qué otros aspectos te gustaría que consideremos?",
+		"¿Tienes alguna pregunta o inquietud específica?",
+		"¿Hay algún detalle importante que no hayamos tocado?",
+	}
+
+	rand.Seed(time.Now().UnixNano())
+	return fallbackPrompts[rand.Intn(len(fallbackPrompts))]
 }
 
 // mergeInsights merges new insights with existing ones, avoiding duplicates.

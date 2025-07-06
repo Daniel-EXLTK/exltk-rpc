@@ -7,9 +7,15 @@ import (
 	"net/rpc/jsonrpc"
 
 	"github.com/Daniel-EXLTK/exltk-rpc/internal/services/r0d0"
+	"github.com/joho/godotenv"
 )
 
 func main() {
+	// Load environment variables from .env file
+	if err := godotenv.Load(".env"); err != nil {
+		log.Printf("Warning: Could not load .env file: %v", err)
+	}
+
 	log.Println("🚀 EXLTK-RPC: r0d0-service starting...")
 
 	// Create and register the R0D0 service

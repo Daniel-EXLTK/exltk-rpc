@@ -51,6 +51,11 @@ func (p *Planner) PlanWorkflow(ctx context.Context, request *UserRequest, capabi
 	// Build prompt for the LLM
 	prompt := p.buildPlanningPrompt(request, capabilities)
 
+	if p.config.EnableLogging {
+		log.Printf("[PLANNING] Contexto enviado al LLM: %+v", request.Context)
+		log.Printf("[PLANNING] Prompt completo enviado al LLM: %s", prompt)
+	}
+
 	// Generate plan using LLM
 	response, err := p.client.GenerateWithContext(ctx, prompt)
 	if err != nil {
@@ -82,7 +87,7 @@ func (p *Planner) PlanWorkflow(ctx context.Context, request *UserRequest, capabi
 func (p *Planner) buildPlanningPrompt(request *UserRequest, capabilities []ServiceCapability) string {
 	var prompt strings.Builder
 
-	prompt.WriteString(`Eres un orquestador inteligente que coordina servicios JSON-RPC. Tu tarea es crear un plan de workflow basado en la solicitud del usuario y las capacidades de los servicios disponibles.
+	prompt.WriteString(`Eres un orquestador inteligente que coordina servicios JSON-RPC para crear conversaciones naturales con usuarios.
 
 SOLICITUD DEL USUARIO:
 `)
@@ -115,19 +120,33 @@ SERVICIOS DISPONIBLES:
 
 	prompt.WriteString(`
 
-INSTRUCCIONES:
+INSTRUCCIONES PARA CONVERSACIÓN NATURAL:
 1. Analiza la solicitud del usuario
-2. Identifica qué servicios y métodos necesitas usar
-3. Si el método DiscoveryStart inicia una sesión, agrega pasos subsiguientes usando DiscoveryContinue y DiscoveryComplete para completar la conversación y obtener todos los datos necesarios.
-4. Crea un plan de workflow con pasos secuenciales
-5. Define las entradas y salidas de cada paso
+2. DECISIÓN CRÍTICA - Verifica si hay session_id en el contexto:
+   - Si NO hay session_id → usa DiscoveryStart
+   - Si SÍ hay session_id → usa DiscoveryContinue
+3. Si el usuario indica que terminó o quiere finalizar, usa DiscoveryComplete
+4. NO generes múltiples pasos automáticos - la conversación debe ser paso a paso
+5. Cada workflow debe tener SOLO 1 paso para mantener la conversación natural
 6. Para referenciar outputs de pasos anteriores, usa el formato: ${step_id.output_name}
-   Por ejemplo: ${step_1.session_id} para usar el session_id del step_1
-7. Considera el manejo de errores y reintentos
+
+TIPOS DE WORKFLOW:
+- Mensaje inicial del usuario (sin session_id) → DiscoveryStart (1 paso)
+- Respuesta a pregunta (con session_id) → DiscoveryContinue (1 paso)  
+- Finalizar conversación → DiscoveryComplete (1 paso)
+
+CONTEXTO ACTUAL:
+`)
+	if request.Context != nil {
+		for key, value := range request.Context {
+			prompt.WriteString(fmt.Sprintf("- %s: %v\n", key, value))
+		}
+	}
+	prompt.WriteString(`
 
 FORMATO DE RESPUESTA (JSON):
 {
-  "description": "Descripción del workflow",
+  "description": "Descripción del paso conversacional",
   "steps": [
     {
       "id": "step_1",
@@ -140,7 +159,6 @@ FORMATO DE RESPUESTA (JSON):
       },
       "inputs": ["variable1", "variable2"],
       "outputs": ["resultado1", "resultado2"],
-      "condition": "condición_opcional",
       "retry_policy": {
         "max_retries": 3,
         "delay": "5s",
@@ -149,19 +167,77 @@ FORMATO DE RESPUESTA (JSON):
     }
   ],
   "context": {
-    "variable_inicial": "valor_inicial"
+    "conversation_mode": "step_by_step"
   }
 }
 
-EJEMPLO DE REFERENCIA DE OUTPUTS:
-Si step_1 produce un output llamado "session_id", el siguiente paso puede usarlo así:
+EJEMPLOS:
+
+Para mensaje inicial:
 {
-  "id": "step_2",
-  "parameters": {
-    "session_id": "${step_1.session_id}"
-  },
-  "inputs": ["session_id"]
+  "description": "Iniciar discovery conversacional",
+  "steps": [
+    {
+      "id": "step_1",
+      "name": "Iniciar descubrimiento",
+      "service": "r0d0-service", 
+      "method": "DiscoveryStart",
+      "parameters": {
+        "user_id": "ui-user",
+        "message": "mensaje_del_usuario"
+      },
+      "inputs": [],
+      "outputs": ["session_id"],
+      "retry_policy": {
+        "max_retries": 3,
+        "delay": "5s",
+        "backoff": 2.0
+      }
+    }
+  ],
+  "context": {
+    "conversation_mode": "step_by_step"
+  }
 }
+
+Para respuesta del usuario (cuando hay session_id en contexto):
+{
+  "description": "Continuar discovery conversacional", 
+  "steps": [
+    {
+      "id": "step_1",
+      "name": "Continuar descubrimiento",
+      "service": "r0d0-service",
+      "method": "DiscoveryContinue", 
+      "parameters": {
+        "session_id": "valor_del_session_id_del_contexto",
+        "message": "respuesta_del_usuario"
+      },
+      "inputs": ["session_id"],
+      "outputs": [],
+      "retry_policy": {
+        "max_retries": 3,
+        "delay": "5s",
+        "backoff": 2.0
+      }
+    }
+  ],
+  "context": {
+    "conversation_mode": "step_by_step"
+  }
+}
+
+IMPORTANTE - REGLAS OBLIGATORIAS: 
+- Si existe "session_id", "previous_session_id", o cualquier session_id en el contexto → USA DiscoveryContinue
+- Si NO hay session_id en el contexto → USA DiscoveryStart
+- SIEMPRE usa el valor literal del session_id del contexto, no variables
+- NUNCA crees nueva sesión si ya existe una activa
+- VERIFICA SIEMPRE el contexto antes de decidir el método
+
+ANÁLISIS DEL CONTEXTO:
+- Busca cualquier campo que contenga "session" o "session_id"
+- Si encuentras un session_id válido → DiscoveryContinue
+- Si NO encuentras session_id → DiscoveryStart
 
 Responde SOLO con el JSON del plan de workflow, sin texto adicional.`)
 
@@ -364,31 +440,40 @@ func (p *Planner) validateAndEnhancePlan(plan *WorkflowPlan, capabilities []Serv
 	return nil
 }
 
-// EnhancePlanWithContext enhances the plan with additional context and optimizations
+// EnhancePlanWithContext enhances the plan with user context
 func (p *Planner) EnhancePlanWithContext(plan *WorkflowPlan, userContext map[string]interface{}) {
+	if plan == nil || userContext == nil {
+		return
+	}
+
 	// Merge user context into plan context
+	if plan.Context == nil {
+		plan.Context = make(map[string]interface{})
+	}
+
 	for key, value := range userContext {
 		plan.Context[key] = value
 	}
 
-	// Add execution metadata
-	plan.Context["workflow_id"] = plan.ID
-	plan.Context["created_at"] = plan.CreatedAt
-	plan.Context["llm_provider"] = p.config.LLMProvider
-	plan.Context["llm_model"] = p.config.LLMModel
+	// Replace session_id in step parameters if available in context
+	if sessionID, exists := userContext["session_id"]; exists {
+		for i := range plan.Steps {
+			step := &plan.Steps[i]
+			if step.Parameters != nil {
+				if _, needsSession := step.Parameters["session_id"]; needsSession {
+					step.Parameters["session_id"] = sessionID
+				}
+			}
+		}
+	}
 
-	// Optimize step parameters with context values
-	for i := range plan.Steps {
-		step := &plan.Steps[i]
-
-		// Replace parameter placeholders with context values
-		for paramName, paramValue := range step.Parameters {
-			if strValue, ok := paramValue.(string); ok {
-				if strings.HasPrefix(strValue, "$") {
-					contextKey := strings.TrimPrefix(strValue, "$")
-					if contextValue, exists := plan.Context[contextKey]; exists {
-						step.Parameters[paramName] = contextValue
-					}
+	// Also check for previous_session_id
+	if prevSessionID, exists := userContext["previous_session_id"]; exists {
+		for i := range plan.Steps {
+			step := &plan.Steps[i]
+			if step.Parameters != nil {
+				if _, needsSession := step.Parameters["session_id"]; needsSession && step.Parameters["session_id"] == "" {
+					step.Parameters["session_id"] = prevSessionID
 				}
 			}
 		}

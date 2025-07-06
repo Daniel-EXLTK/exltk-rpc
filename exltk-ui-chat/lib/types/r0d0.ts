@@ -154,4 +154,46 @@ export const confidenceToMood = (confidence: number): string => {
   if (confidence < 60) return "thinking"
   if (confidence < 80) return "smiling"
   return "happy"
+}
+
+export interface Message {
+  id: string;
+  content: string;
+  role: 'user' | 'assistant';
+  timestamp?: Date;
+  mood?: 'happy' | 'excited' | 'thoughtful' | 'confused' | 'worried' | 'celebrating';
+  context?: ConversationContext;
+  isTyping?: boolean;
+}
+
+export interface ConversationContext {
+  projectType?: string;
+  progress?: number;
+  confidence?: number;
+  discoveredAreas?: string[];
+  missingAreas?: string[];
+}
+
+export interface R0D0Response {
+  session_id?: string;
+  response: string;
+  next_prompt?: string;
+  progress?: number;
+  insights?: string[];
+  instructions?: string;
+  mood?: string;
+  project_slot?: ProjectSlot;
+}
+
+export interface OrchestratorResponse {
+  response: string;
+  success: boolean;
+  result?: any;
+  workflow_id?: string;
+  request_id?: string;
+  steps?: any[];
+  context?: any;
+  error?: string;
+  duration?: string;
+  timestamp?: string;
 } 

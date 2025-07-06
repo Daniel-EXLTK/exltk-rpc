@@ -4,7 +4,7 @@
 **Versión:** 1.0  
 **Autor:** Daniel-EXLTK  
 **Proyecto:** EXLTK-RPC Multi-Agente en Go  
-**Duración Estimada:** 4 semanas  
+**Duración Estimada:** 3 semanas  
 
 ## 🎯 Resumen Ejecutivo
 
@@ -12,10 +12,10 @@
 Implementar una arquitectura LLM-Orchestrator en Go donde un LLM central (Gemini) orquesta dinámicamente múltiples servicios JSON-RPC puros para crear workflows inteligentes.
 
 ### **Componentes Principales**
-1. **r0d0-service** (Go): Servicio de encuestas de proyectos
+1. **r0d0-service** (Go): Servicio de discovery conversacional de proyectos
 2. **proposal-service** (Go): Servicio de generación de propuestas
 3. **LLM Orchestrator** (Go): Cerebro central con Gemini
-4. **API Gateway** (Go): Interfaz HTTP principal
+4. **Frontend Next.js**: Interfaz de usuario con proxy API integrado
 
 ### **Beneficios Esperados**
 - **Rendimiento**: 10-50x más rápido que Python
@@ -29,15 +29,14 @@ Implementar una arquitectura LLM-Orchestrator en Go donde un LLM central (Gemini
 
 | **Semana** | **Fase** | **Entregables** | **% Progreso** |
 |------------|----------|-----------------|----------------|
-| 1 | Infraestructura y R0D0 Service | Estructura proyecto + R0D0 funcional | 25% |
-| 2 | Proposal Service + LLM Core | Proposal Service + Cliente Gemini | 50% |
-| 3 | LLM Orchestrator + Gateway | Orchestrator completo + API Gateway | 75% |
-| 4 | Docker + Testing + Documentación | Sistema completo operativo | 100% |
+| 1-2 | Infraestructura + R0D0 + Orquestador + Frontend | Estructura proyecto + R0D0 + Orquestador + Frontend Next.js | 70% |
+| 2 | Proposal Service | Proposal Service funcional | 85% |
+| 3 | Docker + Testing + Documentación | Sistema completo operativo | 100% |
 
 ---
 
-## 📊 FASE 1: Infraestructura y R0D0 Service
-**Duración:** Semana 1 (5 días)  
+## 📊 FASE 1: Infraestructura + R0D0 + Orquestador + Frontend
+**Duración:** Semana 1-2 (10 días)  
 **Responsable:** Desarrollador Principal  
 
 ### **Subtarea 1.1: Estructura del Proyecto (Día 1)**
@@ -243,11 +242,129 @@ func TestCORSHeaders(t *testing.T)
 
 ---
 
-## 📊 FASE 2: Proposal Service + Cliente Gemini
+### **Subtarea 1.6: Cliente Gemini (Día 5-6)**
+
+#### **Objetivos**
+- Cliente HTTP para Gemini API
+- Manejo de requests/responses
+- Configuración y autenticación
+
+#### **Entregables**
+- `pkg/gemini/client.go`
+- Cliente Gemini funcional
+
+#### **Implementación Requerida**
+```go
+type Client struct {
+    apiKey string
+    client *http.Client
+}
+
+func (c *Client) Generate(prompt string) (string, error) {
+    // HTTP POST a Gemini API
+    // Manejo de respuestas
+    // Error handling
+}
+```
+
+#### **Criterios de Aceptación**
+- [ ] Cliente HTTP para Gemini API
+- [ ] Autenticación con API key
+- [ ] Manejo de errores HTTP/API
+- [ ] Configuración de timeout y retries
+- [ ] Tests con mock de Gemini API
+
+---
+
+### **Subtarea 1.7: LLM Orchestrator (Día 6-8)**
+
+#### **Objetivos**
+- Implementar orquestador con Gemini
+- Lógica de planificación y ejecución
+- Integración con servicios JSON-RPC
+
+#### **Entregables**
+- `internal/orchestrator/orchestrator.go`
+- `internal/orchestrator/planning.go`
+- `internal/orchestrator/execution.go`
+- `internal/orchestrator/introspection.go`
+
+#### **Funcionalidades Clave**
+```go
+func (o *LLMOrchestrator) Process(userMessage string) (*ProcessResult, error)
+func (o *LLMOrchestrator) IntrospectAgents() (map[string]AgentCapabilities, error)
+func (o *LLMOrchestrator) planWorkflow(userMessage string) (*WorkflowPlan, error)
+func (o *LLMOrchestrator) executeWorkflow(plan *WorkflowPlan) ([]StepResult, error)
+```
+
+#### **Criterios de Aceptación**
+- [ ] Introspección automática de servicios
+- [ ] Planificación de workflows con Gemini
+- [ ] Ejecución secuencial de pasos
+- [ ] Manejo de variables entre pasos
+- [ ] Servidor HTTP JSON-RPC en puerto 8502
+
+---
+
+### **Subtarea 1.8: Frontend Next.js (Día 8-10)**
+
+#### **Objetivos**
+- Aplicación Next.js con proxy API
+- Interfaz de usuario moderna
+- Integración con orquestador
+
+#### **Entregables**
+- `exltk-ui-chat/` aplicación Next.js completa
+- Proxy API en `/api/r0d0`
+- Interfaz de chat funcional
+
+#### **Componentes Principales**
+```typescript
+// components/chat-interface.tsx
+export default function ChatInterface()
+
+// components/r0d0-interface.tsx  
+export default function R0D0Interface()
+
+// app/api/r0d0/route.ts
+export async function POST(request: Request)
+```
+
+#### **Criterios de Aceptación**
+- [ ] Aplicación Next.js corriendo en puerto 3000
+- [ ] Proxy API funcionando
+- [ ] Interfaz de chat responsive
+- [ ] Integración con orquestador LLM
+- [ ] Manejo de estados de conversación
+
+---
+
+### **Subtarea 1.9: Integración End-to-End (Día 10)**
+
+#### **Objetivos**
+- Integración completa del sistema
+- Pruebas end-to-end
+- Ajustes finales
+
+#### **Entregables**
+- Sistema integrado funcional
+- Pruebas E2E exitosas
+- Documentación de integración
+
+#### **Criterios de Aceptación**
+- [ ] Flujo completo: Frontend → Orquestador → R0D0 → Response
+- [ ] Pruebas E2E con casos reales
+- [ ] Todos los servicios funcionando
+- [ ] Variables de entorno configuradas
+- [ ] Logs y debugging funcionales
+
+---
+
+## 📊 FASE 2: Proposal Service
 **Duración:** Semana 2 (5 días)  
 **Responsable:** Desarrollador Principal  
 
-### **Subtarea 2.1: Tipos y Estructuras Proposal (Día 6)**
+### **Subtarea 2.1: Tipos y Estructuras Proposal (Día 11)**
 
 #### **Objetivos**
 - Definir tipos Go para proposal service
@@ -282,7 +399,7 @@ type Proposal struct {
 
 ---
 
-### **Subtarea 2.2: Lógica Proposal Service (Día 6-7)**
+### **Subtarea 2.2: Lógica Proposal Service (Día 11-12)**
 
 #### **Objetivos**
 - Implementar generación de propuestas
@@ -310,7 +427,7 @@ func (s *ProposalService) List(req *ListRequest, resp *ListResponse) error
 
 ---
 
-### **Subtarea 2.3: Servidor Proposal Service (Día 7-8)**
+### **Subtarea 2.3: Servidor Proposal Service (Día 12-13)**
 
 #### **Objetivos**
 - Servidor HTTP JSON-RPC para proposals
@@ -330,218 +447,45 @@ func (s *ProposalService) List(req *ListRequest, resp *ListResponse) error
 
 ---
 
-### **Subtarea 2.4: Cliente Gemini (Día 8-9)**
-
-#### **Objetivos**
-- Cliente HTTP para Gemini API
-- Manejo de requests/responses
-- Configuración y autenticación
-
-#### **Entregables**
-- `pkg/gemini/client.go`
-- Cliente Gemini funcional
-
-#### **Implementación Requerida**
-```go
-type Client struct {
-    apiKey string
-    client *http.Client
-}
-
-func (c *Client) Generate(prompt string) (string, error) {
-    // HTTP POST a Gemini API
-    // Manejo de respuestas
-    // Error handling
-}
-```
-
-#### **Criterios de Aceptación**
-- [ ] Cliente HTTP para Gemini API
-- [ ] Autenticación con API key
-- [ ] Manejo de errores HTTP/API
-- [ ] Configuración de timeout y retries
-- [ ] Tests con mock de Gemini API
-
----
-
-### **Subtarea 2.5: Tests Proposal + Gemini (Día 9-10)**
+### **Subtarea 2.4: Tests Proposal Service (Día 13-15)**
 
 #### **Objetivos**
 - Tests completos para proposal service
-- Tests unitarios cliente Gemini
-- Integración end-to-end
+- Tests unitarios e integración
+- Documentación completa
 
 #### **Entregables**
 - Tests unitarios e integración
-- Mocks para Gemini API
 - Documentación completa
+- Integración con orquestador
+
+#### **Tests a Implementar**
+```go
+// internal/services/proposal/service_test.go
+func TestProposalServiceDescribe(t *testing.T)
+func TestGenerateProposal(t *testing.T)
+func TestExportProposal(t *testing.T)
+func TestListProposals(t *testing.T)
+
+// cmd/proposal-service/integration_test.go
+func TestHTTPJSONRPCEndpoint(t *testing.T)
+func TestCORSHeaders(t *testing.T)
+```
 
 #### **Criterios de Aceptación**
 - [ ] Cobertura >90% proposal service
-- [ ] Tests unitarios cliente Gemini
-- [ ] Mock server para tests Gemini
+- [ ] Tests unitarios completos
 - [ ] Tests de integración HTTP
 - [ ] Documentación con ejemplos
+- [ ] Integración con orquestador verificada
 
 ---
 
-## 📊 FASE 3: LLM Orchestrator + API Gateway
+## 📊 FASE 3: Docker + Testing + Documentación
 **Duración:** Semana 3 (5 días)  
-**Responsable:** Desarrollador Principal  
-
-### **Subtarea 3.1: Tipos LLM Orchestrator (Día 11)**
-
-#### **Objetivos**
-- Definir tipos para orquestación
-- Estructuras para workflows y plans
-- Tipos para introspección
-
-#### **Entregables**
-- `internal/orchestrator/types.go`
-- Estructuras de datos core
-
-#### **Tipos Requeridos**
-```go
-type WorkflowPlan struct {
-    Analysis string         `json:"analysis"`
-    Workflow []WorkflowStep `json:"workflow"`
-}
-
-type WorkflowStep struct {
-    Step        int                    `json:"step"`
-    Service     string                 `json:"service"`
-    Method      string                 `json:"method"`
-    Params      map[string]interface{} `json:"params"`
-    Description string                 `json:"description"`
-}
-
-type ProcessResult struct {
-    Response string       `json:"response"`
-    Plan     WorkflowPlan `json:"plan"`
-    Results  []StepResult `json:"results"`
-}
-```
-
-#### **Criterios de Aceptación**
-- [ ] Todos los tipos de orquestación definidos
-- [ ] Estructuras para comunicación inter-servicios
-- [ ] JSON marshaling/unmarshaling correcto
-- [ ] Documentación godoc completa
-
----
-
-### **Subtarea 3.2: Introspección de Servicios (Día 11-12)**
-
-#### **Objetivos**
-- Descubrimiento automático de capacidades
-- Introspección paralela con goroutines
-- Cache de capabilities
-
-#### **Entregables**
-- `internal/orchestrator/introspection.go`
-- Sistema de introspección funcional
-
-#### **Funcionalidades**
-```go
-func (o *LLMOrchestrator) IntrospectAgents() (map[string]AgentCapabilities, error)
-func (o *LLMOrchestrator) introspectAgent(agentURL string) (AgentCapabilities, error)
-```
-
-#### **Criterios de Aceptación**
-- [ ] Introspección paralela con goroutines
-- [ ] Manejo de errores por servicio no disponible
-- [ ] Cache de capabilities con TTL
-- [ ] Timeout configurables
-- [ ] Logs detallados de discovery
-
----
-
-### **Subtarea 3.3: Planificación con LLM (Día 12-13)**
-
-#### **Objetivos**
-- Integración con cliente Gemini
-- Generación de planes de workflow
-- Parsing de respuestas JSON del LLM
-
-#### **Entregables**
-- `internal/orchestrator/planning.go`
-- Sistema de planificación funcional
-
-#### **Funcionalidades**
-```go
-func (o *LLMOrchestrator) planWorkflow(userMessage string, capabilities map[string]AgentCapabilities) (*WorkflowPlan, error)
-func (o *LLMOrchestrator) buildPlanningPrompt(message string, caps map[string]AgentCapabilities) string
-```
-
-#### **Criterios de Aceptación**
-- [ ] Prompt engineering optimizado para Gemini
-- [ ] Parsing robusto de JSON responses
-- [ ] Validación de planes generados
-- [ ] Manejo de errores LLM
-- [ ] Fallback strategies para failures
-
----
-
-### **Subtarea 3.4: Ejecución de Workflows (Día 13-14)**
-
-#### **Objetivos**
-- Ejecutor de pasos de workflow
-- Manejo de contexto entre pasos
-- Llamadas JSON-RPC a servicios
-
-#### **Entregables**
-- `internal/orchestrator/execution.go`
-- Motor de ejecución completo
-
-#### **Funcionalidades**
-```go
-func (o *LLMOrchestrator) executeWorkflow(plan *WorkflowPlan, userID string) ([]StepResult, error)
-func (o *LLMOrchestrator) executeStep(step WorkflowStep, context map[string]interface{}) (StepResult, error)
-```
-
-#### **Criterios de Aceptación**
-- [ ] Ejecución secuencial de pasos
-- [ ] Propagación de contexto entre pasos
-- [ ] Manejo de variables ($variable)
-- [ ] Error handling y rollback
-- [ ] Timeout por paso configurable
-
----
-
-### **Subtarea 3.5: API Gateway (Día 14-15)**
-
-#### **Objetivos**
-- HTTP server principal
-- Endpoints REST para frontend
-- Integración con LLM Orchestrator
-
-#### **Entregables**
-- `cmd/gateway/main.go`
-- API Gateway completo
-
-#### **Endpoints Requeridos**
-```go
-POST /chat          // Procesar mensaje usuario
-GET  /capabilities  // Listar capacidades
-GET  /health        // Health check
-GET  /metrics       // Métricas básicas
-```
-
-#### **Criterios de Aceptación**
-- [ ] Servidor HTTP en puerto 8500
-- [ ] Endpoint `/chat` procesa mensajes
-- [ ] `/capabilities` retorna introspección
-- [ ] CORS configurado para frontend
-- [ ] Logs estructurados de requests
-- [ ] Metrics básicas de latencia
-
----
-
-## 📊 FASE 4: Docker + Testing + Documentación
-**Duración:** Semana 4 (5 días)  
 **Responsable:** Desarrollador Principal + DevOps  
 
-### **Subtarea 4.1: Dockerización (Día 16-17)**
+### **Subtarea 3.1: Dockerización (Día 11-12)**
 
 #### **Objetivos**
 - Dockerfiles para cada servicio
@@ -582,7 +526,7 @@ CMD ["./main"]
 
 ---
 
-### **Subtarea 4.2: Testing Integración (Día 17-18)**
+### **Subtarea 3.2: Testing Integración (Día 12-13)**
 
 #### **Objetivos**
 - Tests end-to-end del sistema completo
@@ -611,7 +555,7 @@ func TestLLMIntegration(t *testing.T)
 
 ---
 
-### **Subtarea 4.3: Monitoreo y Logging (Día 18-19)**
+### **Subtarea 3.3: Monitoreo y Logging (Día 13-14)**
 
 #### **Objetivos**
 - Logging estructurado
@@ -647,7 +591,7 @@ type Metrics struct {
 
 ---
 
-### **Subtarea 4.4: Documentación (Día 19-20)**
+### **Subtarea 3.4: Documentación (Día 14-15)**
 
 #### **Objetivos**
 - Documentación completa del sistema
@@ -679,7 +623,7 @@ docs/
 
 ---
 
-### **Subtarea 4.5: Deployment y Optimización (Día 20)**
+### **Subtarea 3.5: Deployment y Optimización (Día 15)**
 
 #### **Objetivos**
 - Deployment de producción
@@ -703,6 +647,8 @@ docs/
 - [ ] Manual de operaciones completo
 - [ ] Monitoring dashboard funcional
 - [ ] Backup y recovery procedures
+
+
 
 ---
 
@@ -759,6 +705,7 @@ docs/
 - **Test Coverage**: >90% en todos los packages
 - **Build Time**: <30 segundos full build
 - **Docker Image Size**: <50MB por servicio
+- **Duración Total**: 3 semanas (15 días)
 
 ### **Métricas de Performance**
 - **API Latency**: <500ms p95
@@ -802,6 +749,6 @@ docs/
 
 ---
 
-**Nota:** Este plan debe ser revisado semanalmente y ajustado según el progreso real. Las estimaciones de tiempo incluyen un buffer del 20% para imprevistos.
+**Nota:** Este plan debe ser revisado semanalmente y ajustado según el progreso real. Las estimaciones de tiempo incluyen un buffer del 20% para imprevistos. La duración total es de 3 semanas (15 días) eliminando la fase de API Gateway por ser innecesaria.
 
 ¿Apruebas este plan detallado antes de comenzar la implementación? 

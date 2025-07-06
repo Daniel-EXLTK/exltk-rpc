@@ -1,4 +1,4 @@
-import { R0D0Interface } from "@/components/r0d0-interface"
+import R0D0Interface from "@/components/r0d0-interface"
 
 export default function Home() {
   return (

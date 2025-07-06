@@ -3,7 +3,7 @@
 **Fecha Inicio:** 2025-01-27  
 **Proyecto:** LLM-Orchestrator en Go  
 **Estado:** Planificación Completada  
-**Última Actualización:** 2025-01-27  
+**Última Actualización:** 2025-07-05  
 
 ## 🎯 Resumen del Proyecto
 
@@ -103,17 +103,19 @@ Implementar arquitectura LLM-Orchestrator en Go donde Gemini orquesta dinámicam
 ## 🚧 Progreso Actual
 
 ### **Actividad Reciente**
-- **2025-01-27:** Creación de estructura de documentación
-- **2025-01-27:** Organización de archivos en docs/arquitectura/, docs/plan/, docs/seguimiento/
-- **2025-01-27:** Plan de implementación detallado completado
-- **2025-01-27:** Estructura de documentación finalizada con README.md índice
-- **2025-01-27:** Repositorio GitHub creado con ramas main/develop
-- **2025-01-27:** Fase 1 Día 1 completada: Estructura del proyecto Go
+- **2025-07-05:** Depuración del workflow harcodeado en el orquestador
+- **2025-07-05:** Mejora del prompt del LLM para manejo correcto de session_id
+- **2025-07-05:** Agregado logging detallado para depurar el contexto enviado al LLM
+- **2025-07-05:** Identificado problema: orquestador siempre usa DiscoveryStart en lugar de DiscoveryContinue
+- **2025-07-05:** Frontend reconstruido y servicios reiniciados para aplicar cambios
+- **2025-07-05:** Conversación natural funcionando en backend pero no en frontend
+- **2025-07-05:** UI mejorada con layout de 3 columnas y avatares emocionales
+- **2025-07-05:** Integración completa entre frontend, orquestador, R0D0 y LLM
 
 ### **Próximos Pasos**
-1. **Inmediato:** Comenzar Fase 1 - Día 1 (Estructura del Proyecto)
-2. **Esta Semana:** Completar Fase 1 entera (R0D0 Service)
-3. **Semana 2:** Proposal Service + Cliente Gemini
+1. **Inmediato:** Probar conversación en UI para verificar logs mejorados
+2. **Esta Semana:** Validar que DiscoveryContinue se use correctamente con session_id
+3. **Semana 2:** Implementar persistencia de sesiones y historial de propuestas
 
 ---
 
@@ -188,6 +190,7 @@ Implementar arquitectura LLM-Orchestrator en Go donde Gemini orquesta dinámicam
 
 | **Fecha** | **Versión** | **Cambios** | **Autor** |
 |-----------|-------------|-------------|-----------|
+| 2025-07-05 | 1.1 | Depuración workflow harcodeado y mejora de prompts | Daniel-EXLTK |
 | 2025-01-27 | 1.0 | Documento inicial de seguimiento | Daniel-EXLTK |
 
 ---

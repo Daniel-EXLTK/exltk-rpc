@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Daniel-EXLTK/exltk-rpc/internal/memory"
 	"github.com/google/uuid"
 )
 
@@ -59,6 +60,28 @@ func (o *Orchestrator) ProcessRequest(ctx context.Context, request *UserRequest)
 		log.Printf("Processing request: %s from user: %s", request.ID, request.UserID)
 	}
 
+	// === INTEGRACIÓN MEMORIA PERSISTENTE ===
+	memoryURL := os.Getenv("MEMORY_SERVICE_URL")
+	if memoryURL == "" {
+		memoryURL = "http://localhost:8080" // valor por defecto
+	}
+
+	sessionID := ""
+	if s, ok := request.Context["session_id"].(string); ok {
+		sessionID = s
+	}
+	if sessionID == "" {
+		sessionID = request.ID // fallback: usar el request ID como session si no hay
+	}
+
+	// 1. Recuperar contexto conversacional persistente (si existe)
+	conv, err := memory.GetConversationContext(ctx, memoryURL, sessionID)
+	if err == nil && conv != nil {
+		// Fusionar mensajes previos al contexto actual
+		request.Context["messages"] = conv.Messages
+		request.Context["state"] = conv.State
+	}
+
 	// Step 1: Introspect services to discover capabilities
 	introspectionResult, err := o.introspector.IntrospectServices(ctx)
 	if err != nil {
@@ -83,6 +106,37 @@ func (o *Orchestrator) ProcessRequest(ctx context.Context, request *UserRequest)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute workflow: %w", err)
 	}
+
+	// === ACTUALIZAR MEMORIA PERSISTENTE ===
+	// Construir nuevo historial de mensajes
+	var messages []memory.Message
+	if prev, ok := request.Context["messages"].([]memory.Message); ok {
+		messages = prev
+	}
+	// Agregar mensaje del usuario
+	messages = append(messages, memory.Message{
+		Role:      "user",
+		Content:   request.Message,
+		Timestamp: startTime,
+	})
+	// Agregar respuesta del asistente
+	messages = append(messages, memory.Message{
+		Role:      "assistant",
+		Content:   response.Response,
+		Timestamp: time.Now(),
+	})
+	// Estado adicional
+	state := map[string]interface{}{}
+	if s, ok := request.Context["state"].(map[string]interface{}); ok {
+		state = s
+	}
+	// Guardar contexto actualizado
+	_ = memory.SaveConversationContext(ctx, memoryURL, memory.ConversationContext{
+		SessionID: sessionID,
+		UserID:    request.UserID,
+		Messages:  messages,
+		State:     state,
+	})
 
 	// Update response with request details
 	response.RequestID = request.ID
