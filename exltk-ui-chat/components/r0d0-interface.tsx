@@ -1,68 +1,67 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
+import { Send, Circle, Sparkles, Brain, CheckCircle, AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { cn } from "@/lib/utils"
 import { useOrchestratorClient } from "@/lib/useOrchestratorClient"
+import { ProgressIndicator } from "@/components/ui/progress-indicator"
 
 type Message = {
   id: string
   content: string
-  sender: 'user' | 'r0d0'
-  mood?: string
+  role: "user" | "assistant"
+  step?: string
+  mood?: "happy" | "celebrating" | "worried" | "sad" | "smiling" | "thinking"
   timestamp?: Date
-  isTyping?: boolean
-  context?: string
 }
 
-// Función para obtener emoji basado en el estado de ánimo
-const getMoodEmoji = (mood: string) => {
-  // Lista de emojis conocidos
-  const knownEmojis = ['😊', '🚀', '🤔', '💭', '🎉', '😰', '🤖']
-  
-  // Si ya es un emoji conocido, devolverlo directamente
-  if (knownEmojis.includes(mood)) {
-    return mood
-  }
-  
-  // Mapear valores antiguos a emojis
-  const moodMap: { [key: string]: string } = {
-    'happy': '😊',
-    'excited': '🚀',
-    'thoughtful': '🤔',
-    'confused': '💭',
-    'worried': '😰',
-    'celebrating': '🎉'
-  }
-  
-  return moodMap[mood] || '😊'
-}
+type InterviewStep = "initial" | "project_details" | "requirements" | "proposal" | "decision" | "accepted" | "rejected"
 
-// Función para calcular tiempo de escritura realista
-const calculateTypingTime = (message: string): number => {
-  const wordsPerMinute = 40 // Velocidad de escritura promedio
-  const words = message.split(' ').length
-  const baseTime = (words / wordsPerMinute) * 60 * 1000 // En milisegundos
-  return Math.max(1500, Math.min(baseTime, 4000)) // Entre 1.5-4 segundos
+// Tipos para el sistema de slots estructurados
+type SlotKey = 
+  | "proyecto.titulo"
+  | "proyecto.objetivo" 
+  | "proyecto.publico"
+  | "problema"
+  | "resultados_deseados"
+  | "alcance"
+  | "cronograma"
+  | "recursos"
+  | "indicadores_exito"
+
+type ProjectSlots = {
+  [K in SlotKey]?: string
 }
 
 export default function R0D0Interface() {
   const [messages, setMessages] = useState<Message[]>([
     {
-      id: '1',
-      content: "¡Hola! Soy R0D0, tu asistente para propuestas de proyectos. Voy a entrevistarte sobre tu proyecto para crear la mejor propuesta posible. ¿Podrías contarme sobre qué tipo de proyecto tienes en mente?",
-      sender: 'r0d0',
-      mood: '😊',
+      id: "1",
+      content:
+        "¡Hola! Soy R0D0, tu asistente para propuestas de proyectos. Voy a entrevistarte sobre tu proyecto para crear la mejor propuesta posible. ¿Podrías contarme sobre qué tipo de proyecto tienes en mente?",
+      role: "assistant",
+      step: "initial",
+      mood: "happy",
       timestamp: new Date(),
-    }
+    },
   ])
-  
   const [input, setInput] = useState("")
-  const [isTyping, setIsTyping] = useState(false)
-  const [currentMood, setCurrentMood] = useState('😊')
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const [currentStep, setCurrentStep] = useState<InterviewStep>("initial")
   
+  // Estado para slots estructurados
+  const [projectSlots, setProjectSlots] = useState<ProjectSlots>({})
+  const [currentSlot, setCurrentSlot] = useState<number>(1)
+  const [completedSlots, setCompletedSlots] = useState<SlotKey[]>([])
+  const [isCollectingSlots, setIsCollectingSlots] = useState<boolean>(false)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  // Conectar con Orchestrator
   const { sendMessage, isLoading, error, conversationContext, clearContext } = useOrchestratorClient()
+  
+  // Estado de conexión simulado para el diseño
+  const isConnected = !error
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -70,186 +69,301 @@ export default function R0D0Interface() {
 
   useEffect(() => {
     scrollToBottom()
-  }, [messages, isTyping])
+  }, [messages])
 
-  const simulateTyping = (duration: number = 2000) => {
-    setIsTyping(true)
-    setTimeout(() => setIsTyping(false), duration)
+  const getAvatarByMood = (mood = "happy") => {
+    const avatarMap = {
+      happy: "/images/avatar-happy.png",
+      celebrating: "/images/avatar-celebrating.png",
+      worried: "/images/avatar-worried.png",
+      sad: "/images/avatar-sad.png",
+      smiling: "/images/avatar-smiling.png",
+      thinking: "/images/r0d0-avatar.png",
+    }
+    return avatarMap[mood as keyof typeof avatarMap] || "/images/r0d0-avatar.png"
   }
 
   const handleSend = async () => {
-    if (!input.trim() || isLoading) return
+    if (!input.trim()) return
 
     const userMessage: Message = {
       id: Date.now().toString(),
       content: input,
-      sender: 'user',
-      timestamp: new Date()
+      role: "user",
+      timestamp: new Date(),
     }
 
-    setMessages(prev => [...prev, userMessage])
-    setInput('')
-    setIsTyping(true)
+    console.log('📤 Agregando mensaje del usuario al chat:', userMessage)
+    setMessages((prev) => {
+      const newMessages = [...prev, userMessage]
+      console.log('💬 Estado de mensajes después de agregar usuario:', newMessages.length)
+      return newMessages
+    })
+    
+    const userInput = input
+    setInput("")
 
     try {
       console.log('🔄 Enviando mensaje con contexto:', conversationContext)
-      const response = await sendMessage('ui-user', input)
+      const response = await sendMessage('ui-user', userInput)
       
       console.log('📥 Respuesta recibida:', response)
-      
-      // Simular tiempo de escritura realista
-      const typingDuration = Math.max(1500, Math.min(4000, response.response.length * 50))
-      setTimeout(() => {
-        const r0d0Message: Message = {
-          id: Date.now().toString() + '-r0d0',
-          content: response.response,
-          sender: 'r0d0',
-          timestamp: new Date(),
-          mood: currentMood,
-          context: response.context
-        }
-        
-        setMessages(prev => [...prev, r0d0Message])
-        setIsTyping(false)
-        
-        // Actualizar mood basado en el contexto
-        if (response.context) {
-          const moods = ['😊', '🚀', '🤔', '💭', '🎉']
-          const randomMood = moods[Math.floor(Math.random() * moods.length)]
-          setCurrentMood(randomMood)
-        }
-      }, typingDuration)
-      
+
+      const botResponse: Message = {
+        id: (Date.now() + 1).toString(),
+        content: response.response,
+        role: "assistant",
+        step: currentStep,
+        mood: "thinking",
+        timestamp: new Date(),
+      }
+
+      console.log('🤖 Agregando respuesta del bot al chat:', botResponse)
+      setMessages((prev) => {
+        const newMessages = [...prev, botResponse]
+        console.log('💬 Estado final de mensajes:', newMessages.length)
+        return newMessages
+      })
     } catch (error) {
-      console.error('❌ Error:', error)
-      setIsTyping(false)
+      console.error('❌ Error al enviar mensaje:', error)
       
       const errorMessage: Message = {
-        id: Date.now().toString() + '-error',
+        id: (Date.now() + 1).toString(),
         content: 'Lo siento, hubo un problema al procesar tu mensaje. ¿Podrías intentar de nuevo?',
-        sender: 'r0d0',
+        role: "assistant",
+        step: currentStep,
+        mood: "worried",
         timestamp: new Date(),
-        mood: '😰'
       }
-      
-      setMessages(prev => [...prev, errorMessage])
+
+      console.log('🔄 Agregando respuesta de error:', errorMessage)
+      setMessages((prev) => [...prev, errorMessage])
     }
   }
 
-  const handleClearChat = () => {
-    setMessages([
-      {
-        id: '1',
-        content: "¡Hola! Soy R0D0, tu asistente para propuestas de proyectos. Voy a entrevistarte sobre tu proyecto para crear la mejor propuesta posible. ¿Podrías contarme sobre qué tipo de proyecto tienes en mente?",
-        sender: 'r0d0',
-        mood: '😊',
-        timestamp: new Date(),
-      }
-    ])
-    clearContext()
-    setCurrentMood('😊')
+  const getStepIndicator = () => {
+    switch (currentStep) {
+      case "initial": return 1
+      case "project_details": return 2
+      case "requirements": return 3
+      case "proposal": return 4
+      default: return 1
+    }
   }
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault()
-      handleSend()
+  const getStepIcon = () => {
+    switch (currentStep) {
+      case "initial":
+        return <Sparkles className="h-4 w-4 text-teal-600" />
+      case "project_details":
+        return <Brain className="h-4 w-4 text-blue-600" />
+      case "requirements":
+        return <CheckCircle className="h-4 w-4 text-green-600" />
+      case "proposal":
+        return <AlertCircle className="h-4 w-4 text-orange-600" />
+      default:
+        return <Circle className="h-4 w-4 text-gray-600" />
+    }
+  }
+
+  const getStepDescription = () => {
+    switch (currentStep) {
+      case "initial":
+        return "Conociendo tu proyecto"
+      case "project_details":
+        return "Analizando requerimientos"
+      case "requirements":
+        return "Definiendo alcance"
+      case "proposal":
+        return "Generando propuesta"
+      case "accepted":
+        return "¡Proyecto aprobado!"
+      default:
+        return "En progreso"
     }
   }
 
   return (
-    <div className="flex flex-col h-full max-w-4xl mx-auto">
+    <div className="flex flex-col h-screen max-w-5xl mx-auto bg-gradient-to-br from-slate-50 to-gray-100">
       {/* Header */}
-      <div className="p-4 border-b bg-gradient-to-r from-teal-50 to-blue-50">
-        <div className="flex items-center gap-3">
-          <div className="text-2xl">🤖</div>
-          <div>
-            <h1 className="text-xl font-bold text-teal-800">R0D0 Discovery</h1>
-            <p className="text-sm text-gray-600">
-              Conversación natural para conocer tu proyecto
-            </p>
+      <div className="bg-white/80 backdrop-blur-sm border-b border-gray-200/50 px-3 py-3 shadow-sm">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4">
+              <img src="/images/exltk-logo.png" alt="EXLTK" className="h-20 w-auto" />
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className={cn(
+              "flex items-center gap-2 px-3 py-1.5 rounded-full border",
+              isConnected 
+                ? "bg-green-50 border-green-200" 
+                : "bg-red-50 border-red-200"
+            )}>
+              <Circle className={cn(
+                "h-2.5 w-2.5 animate-pulse",
+                isConnected 
+                  ? "fill-green-500 text-green-500" 
+                  : "fill-red-500 text-red-500"
+              )} />
+              <span className={cn(
+                "text-sm font-medium",
+                isConnected 
+                  ? "text-green-700" 
+                  : "text-red-700"
+              )}>
+                {isConnected ? "Orchestrator conectado" : "Modo simulado"}
+              </span>
+            </div>
           </div>
         </div>
+
+        {/* Progress indicator */}
+        {isCollectingSlots ? (
+          <ProgressIndicator
+            currentSlot={currentSlot}
+            totalSlots={9}
+            completedSlots={completedSlots}
+            className="mt-4"
+          />
+        ) : (
+          <div className="mt-4 bg-gray-50/50 rounded-lg p-4 border border-gray-200/50">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                {getStepIcon()}
+                <span className="text-sm font-medium text-gray-700">{getStepDescription()}</span>
+              </div>
+              <span className="text-xs text-gray-500 font-medium">Paso {getStepIndicator()} de 4</span>
+            </div>
+            <div className="flex-1 bg-gray-200 rounded-full h-2 overflow-hidden">
+              <div
+                className="bg-gradient-to-r from-teal-500 to-teal-600 h-2 rounded-full transition-all duration-500 ease-out shadow-sm"
+                style={{ width: `${(getStepIndicator() / 4) * 100}%` }}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.map((message) => (
+      {/* Chat Area */}
+      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+        {messages.map((message, index) => (
           <div
             key={message.id}
-            className={`flex ${message.sender === "user" ? "justify-end" : "justify-start"}`}
+            className={cn(
+              "flex gap-4 max-w-[85%] animate-in slide-in-from-bottom-2 duration-300",
+              message.role === "user" ? "ml-auto flex-row-reverse" : "",
+            )}
+            style={{ animationDelay: `${index * 100}ms` }}
           >
+            <div className="relative shrink-0">
+              <div
+                className={cn(
+                  "h-15 w-15 rounded-full flex items-center justify-center shadow-md transition-all duration-200 hover:scale-105",
+                  message.role === "user"
+                    ? "bg-gradient-to-br from-gray-400 to-gray-600"
+                    : "bg-gradient-to-br from-teal-100 to-teal-200 border-2 border-teal-300/50",
+                )}
+              >
+                {message.role === "user" ? (
+                  <div className="h-8 w-8 rounded-full bg-white/20" />
+                ) : (
+                  <img
+                    src={getAvatarByMood(message.mood) || "/placeholder.svg"}
+                    alt="R0D0"
+                    className="h-14 w-14 rounded-full transition-all duration-200"
+                  />
+                )}
+              </div>
+              {message.role === "assistant" && (
+                <div className="absolute -bottom-1 -right-1 h-3 w-3 bg-teal-500 rounded-full border border-white shadow-sm" />
+              )}
+            </div>
             <div
-              className={`max-w-[80%] rounded-lg px-4 py-2 ${
-                message.sender === "user"
-                  ? "bg-teal-600 text-white"
-                  : "bg-gray-100 text-gray-800"
-              }`}
+              className={cn(
+                "rounded-2xl px-5 py-4 text-sm leading-relaxed shadow-sm transition-all duration-200 hover:shadow-md",
+                message.role === "user"
+                  ? "bg-gradient-to-br from-teal-500 to-teal-600 text-white shadow-teal-500/20"
+                  : "bg-white border border-gray-200/50 text-gray-800 shadow-gray-500/10",
+              )}
             >
-              {message.sender === "r0d0" && (
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-lg">{getMoodEmoji(message.mood || "happy")}</span>
-                  <span className="text-xs font-medium text-gray-500">R0D0</span>
+              {message.content.split("\n").map((line, lineIndex) => (
+                <div key={lineIndex} className={cn(line.startsWith("•") ? "ml-2" : "")}>
+                  {line}
+                  {lineIndex < message.content.split("\n").length - 1 && <br />}
                 </div>
-              )}
-              <p className="whitespace-pre-wrap">{message.content}</p>
-              {message.timestamp && (
-                <p className="text-xs opacity-70 mt-1">
-                  {message.timestamp.toLocaleTimeString()}
-                </p>
-              )}
+              ))}
             </div>
           </div>
         ))}
-        
-        {/* Typing indicator */}
-        {isTyping && (
-          <div className="flex justify-start">
-            <div className="max-w-[80%] rounded-lg px-4 py-2 bg-gray-100 text-gray-800">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-lg">💭</span>
-                <span className="text-xs font-medium text-gray-500">R0D0</span>
+
+        {isLoading && (
+          <div className="flex gap-4 max-w-[85%] animate-in slide-in-from-bottom-2 duration-300">
+            <div className="relative shrink-0">
+              <div className="h-14 w-14 rounded-full bg-gradient-to-br from-teal-100 to-teal-200 border-2 border-teal-300/50 flex items-center justify-center shadow-md">
+                <img src="/images/r0d0-avatar.png" alt="R0D0" className="h-12 w-12 rounded-full animate-pulse" />
               </div>
-              <div className="flex items-center gap-1">
-                <span className="text-sm text-gray-600">
-                  Escribiendo...
-                </span>
-                <div className="flex space-x-1 ml-2">
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+              <div className="absolute -bottom-1 -right-1 h-3 w-3 bg-teal-500 rounded-full border border-white shadow-sm animate-pulse" />
+            </div>
+            <div className="bg-white border border-gray-200/50 shadow-sm rounded-2xl px-5 py-4">
+              <div className="flex items-center gap-3">
+                <div className="flex gap-1">
+                  <div className="w-2 h-2 bg-teal-500 rounded-full animate-bounce" />
+                  <div className="w-2 h-2 bg-teal-500 rounded-full animate-bounce" style={{ animationDelay: "0.1s" }} />
+                  <div className="w-2 h-2 bg-teal-500 rounded-full animate-bounce" style={{ animationDelay: "0.2s" }} />
                 </div>
+                <span className="text-sm text-gray-600 font-medium">R0D0 está analizando...</span>
+                <Brain className="h-4 w-4 text-teal-500 animate-pulse" />
               </div>
             </div>
           </div>
         )}
-        
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input */}
-      <div className="p-4 border-t bg-white">
-        <div className="flex gap-2">
-          <Input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyPress}
-            placeholder="Describe tu proyecto o responde a las preguntas..."
-            disabled={isLoading || isTyping}
-            className="flex-1"
-          />
+      {/* Enhanced Input Area */}
+      <div className="bg-white/80 backdrop-blur-sm border-t border-gray-200/50 px-6 py-5 shadow-lg">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            handleSend()
+          }}
+          className="flex gap-4"
+        >
+          <div className="flex-1 relative">
+            <Input
+              placeholder="Describe tu proyecto..."
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              className="rounded-full border-gray-300 px-6 h-12 text-base focus:border-teal-500 focus:ring-teal-500/20 focus:ring-4 transition-all duration-200 shadow-sm bg-white/50 backdrop-blur-sm"
+              disabled={isLoading}
+            />
+            <div className="absolute right-4 top-1/2 transform -translate-y-1/2">
+              <Sparkles className="h-4 w-4 text-gray-400" />
+            </div>
+          </div>
           <Button
-            onClick={handleSend}
-            disabled={!input.trim() || isLoading || isTyping}
-            className="bg-teal-600 hover:bg-teal-700"
+            type="submit"
+            size="icon"
+            disabled={isLoading || !input.trim()}
+            className="rounded-full bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 h-12 w-12 shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105 disabled:opacity-50 disabled:hover:scale-100"
           >
-            {isLoading || isTyping ? "..." : "Enviar"}
+            <Send className="h-5 w-5" />
+            <span className="sr-only">Enviar mensaje</span>
           </Button>
-        </div>
-        
-        {/* Estado */}
-        <div className="mt-2 text-xs text-gray-500 text-center">
-          {isTyping ? "R0D0 está escribiendo..." : "Listo para conversar"}
+        </form>
+      </div>
+
+      {/* Enhanced Footer */}
+      <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 text-center border-t border-gray-200/50">
+        <div className="flex items-center justify-center gap-2">
+          <div className="h-6 w-6 rounded bg-gradient-to-br from-teal-500 to-teal-600 flex items-center justify-center">
+            <span className="text-white text-xs font-bold">R</span>
+          </div>
+          <p className="text-xs text-gray-500 font-medium">
+            R0D0 • Powered by <span className="text-teal-600 font-semibold">EXLTK Orchestrator</span>
+            {isConnected && <span className="text-green-600"> • Conectado</span>}
+          </p>
         </div>
       </div>
     </div>
